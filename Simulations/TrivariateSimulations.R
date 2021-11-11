@@ -52,3 +52,33 @@ emfit <- function(x, ...){
 }
 
 fits <- lapply(dat, emfit)
+
+
+# Generate the nine (n = {250, 500, 1000} * profile length ={short, medium long}) sets used in paper --------
+simn <- function(n, ntms, theta){
+  x <- replicate(100,
+                 joineRML::simData(n = n, ntms = ntms, beta = beta, gamma.x = gamma.x,
+                                   gamma.y = gamma.y, sigma2 = sigma2, D = D, theta0=theta[1], theta1=theta[2]),
+                 simplify = F)
+  print(mean(do.call(c, lapply(x, function(xx) sum(xx$survdat$cens)/n))))
+  x
+}
+
+source("./Simulations/simFns.R")
+save.loc <- paste0(getwd(), "/Simulations/") # Or create and define sensible sub-directory...
+
+for(i in c(250, 500, 1e3)){
+  for(j in c("Short", "Medium", "Long")){
+    if(j == "Short"){ntms <- 6; theta <- c(-2.75, 0.15)}
+    if(j == "Medium"){ntms <- 10; theta <- c(-4, 0.15)}
+    if(j == "Long"){ntms <- 15; theta <- c(-5.5, 0.15)}
+    d <- simn(i, ntms, theta)
+    dat <- lapply(d, castData3)
+    for(k in 1:100) dat[[k]]$aa <- k
+    file.name <- paste0(save.loc, "Trivariate-n", i, "-", j, ".RData")
+    save(dat, file = file.name)
+    message(file.name)
+  }
+}
+
+

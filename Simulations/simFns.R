@@ -4,41 +4,27 @@
 #' ###
 
 # CastDatas (K = {3, 5, 10}) ----------------------------------------------
-castData3 <- function(x){
+castData <- function(x, nK){
   dat <- dplyr::left_join(
-    dplyr::select(x$longdat, id, cont=ctsxl, bin=binxl, time, Y.1, Y.2, Y.3),
+    dplyr::select(x$longdat, id, cont=ctsxl, bin=binxl, time, paste0('Y.', 1:nK)),
     dplyr::select(x$survdat, id, survtime, status = cens), "id"
   ) %>% 
     mutate(status = ifelse(survtime == max(survtime), 0, status))
   
   survdat <- dplyr::distinct(dat, id, survtime, status, cont, bin)
   ph <- coxph(Surv(survtime, status)~cont + bin,survdat)
-  list(dat=dat, survdat=survdat, ph=ph, 
-       mst = median(survdat$survtime), prop=sum(survdat$status)/nrow(survdat))
+  list(dat=dat, survdat=survdat, ph=ph)
 }
 
-castData5 <- function(x){
-  dat <- dplyr::left_join(
-    dplyr::select(x$longdat, id, cont=ctsxl, bin=binxl, time, Y.1:Y.5),
-    dplyr::select(x$survdat, id, survtime, status = cens), "id"
-  ) %>% 
-    mutate(status = ifelse(survtime == max(survtime), 0, status))
-  
-  survdat <- dplyr::distinct(dat, id, survtime, status, cont, bin)
-  ph <- coxph(Surv(survtime, status)~cont + bin,survdat)
-  list(dat=dat, survdat=survdat, ph=ph, 
-       mst = median(survdat$survtime), prop=sum(survdat$status)/nrow(survdat))
+
+# Extracting results ------------------------------------------------------
+extract.estimates <- function(x, nK){ # x a fitted list.
+  D <- vech(x$coeffs$D); names(D) <- rep('D', length(D))
+  beta <- c(x$coeffs$beta); names(beta) <- names(x$SEs[grepl('^beta', names(x$SEs))])
+  var.e <- c(x$coeffs$var.e); names(var.e) <- paste0('var.e_', 1:nK)
+  gamma <- c(x$coeffs$gamma)
+  eta <- c(x$coeffs$eta); names(eta) <- paste0('eta_', names(eta))
+  return(c(D, beta, var.e, gamma, eta))
 }
 
-castData10 <- function(x){
-  dat <- dplyr::left_join(
-    dplyr::select(x$longdat, id, cont=ctsxl, bin=binxl, time, Y.1:Y.10),
-    dplyr::select(x$survdat, id, survtime, status = cens), "id"
-  ) %>% 
-    mutate(status = ifelse(survtime == max(survtime), 0, status))
-  
-  survdat <- dplyr::distinct(dat, id, survtime, status, cont, bin)
-  ph <- coxph(Surv(survtime, status)~cont + bin,survdat)
-  list(dat=dat, survdat=survdat, ph=ph, 
-       mst = median(survdat$survtime), prop=sum(survdat$status)/nrow(survdat))
-}
+extract.time <- function(x) x$EMtime + x$postprocess.time

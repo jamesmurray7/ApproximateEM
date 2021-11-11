@@ -59,7 +59,7 @@ getZi <- function(data, K = 5){
   zz <- list()
   for(i in uids){
     Zi <- list()
-    Zij <- cbind(1, data[data$id == i, "time"])
+    Zij <- as.matrix(cbind(1, data[data$id == i, "time"]))
     for(j in 1:K) Zi[[j]] <- Zij
     zz[[i]] <- as.matrix(Matrix::bdiag(Zi))
   }

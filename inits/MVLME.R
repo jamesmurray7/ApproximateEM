@@ -1,9 +1,15 @@
 #' ###
-#' MVLME.R 
+#' MVLME.R // Multivariate linear mixed effects
 #' ---
-#' Multivariate extension of the linear mixed effects model to find optimal 
-#' starting values for parameters in the longitudinal sub-model
+#' Uses longit initial conditions from inits.R
+#' and fits MVLME to find optimal starting values for joint model
 #' ###
+
+if(!'Rcpp'%in%loadedNamespaces()) library(Rcpp)
+if(!'RcppArmadillo'%in%loadedNamespaces()) library(RcppArmadillo)
+
+# Prerequisites -----------------------------------------------------------
+# sourceCpp("./mvlmecpp.cpp") # Loading Rcpp Source files...
 
 if(!"vech"%in%ls()) vech <- function(x) x[lower.tri(x, diag = T)]
 
@@ -66,6 +72,7 @@ mvlme <- function(d, Y, X, Z, Yk, Xk, Zk, mi, inits.long, K,
     names(beta.new) <- names(beta)
     
     # var.e
+    # change to beta.new.mat?
     var.e.new <- Ee(Yk, Xk, Zk, beta.mat, bmat, bbTk, n, K)/colSums(do.call(rbind, mi))
     
     mvlmetime[iter + 1] <- proc.time()[3] - Estart

@@ -1,12 +1,12 @@
 #' ####
 #' Prerequisites.R
 #' ----
-#' Loads all functions and libraries necessary for EM.R (trivariate)
+#' Loads all functions and libraries necessary for EM.R 
 #' ####
 
 # Libraries ---------------------------------------------------------------
 library(survival)
-library(lme4)
+library(nlme)
 library(Rcpp)
 library(RcppArmadillo)
 library(dplyr)
@@ -18,12 +18,15 @@ message("Loading ", paste0(getwd(), "/source/gammaCalc.cpp"))
 sourceCpp("./source/gammaCalc.cpp")
 message("Loading ", paste0(getwd(), "/source/ll.cpp"))
 sourceCpp("./source/ll.cpp")
+message("Loading ", paste0(getwd(), "/source/lambdaUpdate.cpp"))
+sourceCpp("./source/lambdaUpdate.cpp")
 
 # Source functions --------------------------------------------------------
 source("./DataFunctions/longFns.R")
 source("./DataFunctions/survFns.R")
-source("./InitialConditions/inits.R")
-source("./InitialConditions/MVLME.R")
+source("./inits/inits.R")
+source("./inits/MVLME.R")
+source("./getHessian.R")
 
 # Other functions ---------------------------------------------------------
 vech <- function(x) x[lower.tri(x, diag = T)]
@@ -45,5 +48,5 @@ d2b.ll <- function(K, Z, D, V, l0u, Fu, g, eta, bi){
   -crossprod(Z, solve(V) %*% Z)- solve(D) + surv.part
 }
 
-message("\nPrerequisites Loaded\n")
+message('\n============================\n=== Prerequisites loaded ===\n============================')
 

@@ -1,23 +1,51 @@
 #' ####
-#' inits.R 
-#' Initial conditions for longitudinal and survival sub-models
+#' inits.R // Initial conditions for longitudinal and survival sub-models
 #' ---
 #' Survival part STOPs here.
 #' Longitudinal then undergoes MVLME fit
 #' ####
 
+if(!'nlme'%in%loadedNamespaces()) library(nlme)
+if(!'dplyr'%in%loadedNamespaces()) library(dplyr)
+
 # var.e, beta, D inits using lme4 -----------------------------------------
 Longit.inits <- function(K, data){
   lfitK <- list()
   for(k in 1:K){
-    lfitK[[k]] <- lmer(as.formula(paste0('Y.', k, '~ time + cont + bin + (1 + time|id)')), data = data)
+    lfitK[[k]] <- nlme::lme(fixed = as.formula(paste0('Y.', k, '~ time + cont + bin')),
+                                    random = as.formula(paste0( ' ~ 1 + time |id')), data = data,
+                                    method = "ML",
+                                    control = nlme::lmeControl(opt = "optim", msTol = 1e-3))
+    
   }
+
   # The three items
-  var.e <- do.call(c, lapply(lfitK, sigma))^2
-  beta <- do.call(c, lapply(lfitK, fixef))
+  var.e <- do.call(c, lapply(1:K, function(k){
+    x <- lfitK[[k]]$sigma
+    names(x) <- paste0('var.e_', k)
+    x
+  }))^2
+  
+  beta <- do.call(c, lapply(1:K, function(k){
+    x <- nlme::fixef(lfitK[[k]])
+    names(x) <- paste0('beta_', k, names(x))
+    x
+  }))
+  
+  # D
   D <- as.matrix(Matrix::bdiag(
-    lapply(lfitK, function(x) matrix(VarCorr(x)$id, dim(VarCorr(x)$id)))
+    lapply(lfitK, function(X){
+      matrix(nlme::getVarCov(X), dim(nlme::getVarCov(X)))
+    })
   ))
+  
+  # Check D positive-definite, transform if not
+  if(any(eigen(D)$values < 0) || (det(D) <= 0)){
+    message("Generated covariance matrix not positive semi-definite")
+    message("\n------- -> Transforming... <- -------\n")
+    D <- Matrix::nearPD(D, maxit = 1e4)$mat
+  }
+
   list(var.e.init = var.e,
        beta.init = beta,
        D.init = D,
@@ -29,14 +57,10 @@ Ranefs <- function(longfits){
   fits <- longfits$long.fits
   K <- length(fits)
   
-  # Just need ONE instance of ID x time
-  idtime.list <- list()
-  for(i in unique(fits[[1]]@frame$id)) idtime.list[[i]] <- cbind(1, fits[[1]]@frame[fits[[1]]@frame$id == i, 'time'])
-  
   # The random effects
   ranefK <- list()
   for(k in 1:K){
-    ranefK[[k]] <- as.matrix(ranef(fits[[k]])$id)
+    ranefK[[k]] <- as.matrix(nlme::ranef(fits[[k]]))
     colnames(ranefK[[k]]) <- paste0(c("intercept_", "slope_"), k)
   }
 
@@ -44,6 +68,8 @@ Ranefs <- function(longfits){
   REs$id <- 1:nrow(REs)
   REs
 }
+
+# REs <- Ranefs(inits.long)
 
 # Survival Inits ----------------------------------------------------------
 
@@ -54,14 +80,22 @@ ToStartStop <- function(data){
   
   for(i in uids){
     i.dat <- data[data$id == i, c('id', 'time', 'survtime')]
-    this.subj[[i]] <- cbind(
+    df <- as.data.frame(cbind(
       id = i.dat$id,
       time1 = i.dat$time,
       time2 = c(i.dat$time[-1], unique(i.dat$survtime))
-    )
+    ))
+    this.subj[[i]] <- df[df$time1 < df$time2, ]
+    # this.subj[[i]] <- cbind(
+    #   id = i.dat$id,
+    #   time1 = i.dat$time,
+    #   time2 = c(i.dat$time[-1], unique(i.dat$survtime))
+    # )
   }
   as.data.frame(do.call(rbind, this.subj))
 }
+
+#ss <- ToStartStop(d)
 
 # Using this StartStop and getting timevarying coxph...
 TimeVarCox <- function(data, REs, fixef.surv = c('cont', 'bin'),
@@ -95,3 +129,5 @@ TimeVarCox <- function(data, REs, fixef.surv = c('cont', 'bin'),
   
   list(inits = coef(ph), l0.init = coxph.detail(ph)$haz, ph = ph)
 }
+
+# test <- TimeVarCox(d, REs)
