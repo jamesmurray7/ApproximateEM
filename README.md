@@ -1,6 +1,5 @@
 # ApproximateEM
 This repository contins all necessary R scripts to implement the Approximate EM algorithm on joint models of survival and multivariate joint data.
-Specifically, this repository fits such models for three, five and ten coviarates each with single time-to-event.
 
 This README briefly sets out file structure. The working directory needs to be set to `~/.../ApproximateEM` in order for the structure set out here to work without a hitch.
 
@@ -12,19 +11,33 @@ Necessary packages are
 * `ucminf`
 * `statmod`
 
+# Function call and output
+
 The file `EM.R` fits a multivariate model with K longitudinal responses via approximate EM algorithm. The user can determine the number of responses via the `nK` argument in the call to `em()`.
+
+## User input
 Necessary arguments here are:
 * `data`: a dataset that matches the required data format detailed in the next section. Currently only completely balanced data is fit by the algorithm;
 * `ph`: a Cox proportional-hazards model fit with a continuous `cont` and binary `bin` variable which are additionally included in the longitudinal model and data;
 * `nK`: The number of longitudinal responses to fit. (if nK=3 then variables named Y.1 -> Y.3 are fit in a trivariate joint model.
 Optional arguments are:
 * `gh.nodes`: The number of weights and abscissae to use in Gauss-Hermite quadrature (defaults to three);
-* `collect.hist`: Should parameter estimates at each iteration be stored? (defaults to TRUE);
+* `collect.hist`: Should parameter estimates at each iteration be stored? (defaults to `TRUE`);
 * `max.iter`: How many iterations to attempt before exiting and returning the max.iter'th as final parameter estimates (defaults to 200);
 * `tol`: Tolerance that difference between iterations across all parameters must be less than (defaults to 0.01);
 * `diff.type`: Should relative difference (the defualt, 'abs.rel') be used, or absolute ('abs') be used to monitor convergence?
-* `post.process`: Should posterior estimates of random effects be calculated at final parameter estimates and standard errors calculated? (defaults to TRUE);
-* `verbose`: If TRUE then prints all parameter estimates to the console at each iteration (defaults to FALSE).
+* `post.process`: Should posterior estimates of random effects be calculated at final parameter estimates and standard errors calculated? (defaults to `TRUE`);
+* `verbose`: If `TRUE` then prints all parameter estimates to the console at each iteration (defaults to `FALSE`).
+
+## Generated Output
+* `REs`: A matrix of the random effects. If `post.process` is `TRUE` then these are calculated post-hoc at final parameter values;
+* `coeffs`: A list of parameter estimates;
+* `EMtime`: The time taken for the approximate EM algorithm to converge (s);
+* `mvlme.time`: The time taken for the MVLME step to obtain initial conditions to converge (s);
+* `comp.time`: The time taken for the `em()` call to complete (i.e. EM, MVLME, data functions, all initial conditions and post-processing;
+* `history`: if `collect.hist` is `TRUE` then a matrix containing parameter estimates at each iteration.
+* `SEs`: if `post.process` is `TRUE` then a vector of approximate standard errors calculated using the observed empirical information matrix.
+* `postprocess.time`: if `post.process` is `TRUE` then the time taken for RE calculation and standard error calculation in post processing step.
 
 # Data structure
 Each longitudinal sub-model is fit with the following formulation:
