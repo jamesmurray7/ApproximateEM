@@ -4,7 +4,7 @@
 #' Returns SEs for all parameters except for the baseline hazard.
 #' ####
 
-hessian <- function(Omega, data.mat, V, b, S, l0i, l0u, gh.nodes, n, q, nK){
+hessian <- function(Omega, data.mat, V, b, bmat, Sigmai, S, l0u, gh.nodes, n, q, nK){
   # Extract fitted values (MLEs) ----
   beta <- Omega$beta
   var.e <- Omega$var.e
@@ -12,18 +12,20 @@ hessian <- function(Omega, data.mat, V, b, S, l0i, l0u, gh.nodes, n, q, nK){
   gamma <- Omega$gamma
   eta <- Omega$eta
   l0 <- Omega$hazard[, 2]
-  Sigmai <- S
-  
+
   # Extract data objects ----
   # Longitudinal //
   Z <- data.mat$Z; Zk <- data.mat$Zk
   X <- data.mat$X; Xk <- data.mat$Xk
   Y <- data.mat$Y; Yk <- data.mat$Yk
   mi <- data.mat$mi
+  
   # Survival //
   K <- data.mat$K
-  sv <- data.mat$sv
-  Fi <- sv$Fi; Fu <- sv$Fu; Deltai <- sv$Di; ft <- sv$ft
+  KK <- data.mat$KK
+  Fi <- data.mat$Fi
+  Fu <- data.mat$Fu
+  Deltai <- data.mat$Deltai
   
   gh <- statmod::gauss.quad.prob(gh.nodes, 'normal') 
   w <- gh$weights; v <- gh$nodes
@@ -49,7 +51,7 @@ hessian <- function(Omega, data.mat, V, b, S, l0i, l0u, gh.nodes, n, q, nK){
   
   sDi <- function(i) {
     mapply(function(b) {
-      out <- 0.5 * tcrossprod(b) %*% (Dinv %*% delta.D[[i]] %*% Dinv)
+      out <- 0.5 * tcrossprod(b) %*% (Dinv %*% delta.D[[i]] %*% Dinv)   # (Sigmai + tcrossprod(b))?
       lhs[i] + sum(diag(out))
     },
     b = b,
@@ -79,9 +81,9 @@ hessian <- function(Omega, data.mat, V, b, S, l0i, l0u, gh.nodes, n, q, nK){
   X = X, V = V, Y = Y, Z = Z, b = b, tau = tau.long, SIMPLIFY = F)
   
   # S(var.e) ----
-  svar.e <- list()#matrix(NA, nr = n, nc = nK)
+  svar.e <- list()
   for(i in 1:n){
-    temp <- numeric(3)
+    temp <- numeric(nK)
     for(k in 1:nK){
       tauK <- sqrt(diag(Zk[[i]][[k]] %*% Sigmai[[i]][b.inds[[k]], b.inds[[k]]] %*% t(Zk[[i]][[k]])))
       rhs <- 0
@@ -96,68 +98,18 @@ hessian <- function(Omega, data.mat, V, b, S, l0i, l0u, gh.nodes, n, q, nK){
   }
   
   # Survival parameters ----
-  # Define mu, tau and sum(gamma_k*b_{ik}) for use in Scores for gamma and eta
-  tau.surv <- mapply(function(b, S, Fu){
-    out <- 0
-    for(k in 1:nK){
-      out <- out + diag(gamma[k]^2 * tcrossprod(Fu %*% S[b.inds[[k]], b.inds[[k]]], Fu))
-    }
-    sqrt(out)
-  }, b = b, S = Sigmai, Fu = Fu, SIMPLIFY = F)
-  
-  sumgammabk <- mapply(function(b){
-    out <- 0
-    for(k in 1:nK){
-      out <- out + gamma[k] * b[b.inds[[k]]]
-    }
-    out
-  }, b = b, SIMPLIFY = F)
-  
-  mu.surv <- mapply(function(K, Fu, gb){
-    exp(K %*% eta) %x% exp(Fu %*% gb)
-  }, K = K, Fu = Fu, gb = sumgammabk, SIMPLIFY = F)
-  
-  # S(gamma) -----
-  sgamma <- list()
-  for(i in 1:n){
-    out <- matrix(rep(0, nK), nr = 1, nc = nK)
-    for(k in 1:nK){
-      cenK <- Deltai[i] * Fi[i, ] %*% b[[i]][b.inds[[k]]]
-      rhs <- 0
-      for(l in 1:3){
-        xi <- getxi(tau.surv[[i]], mu.surv[[i]], v[l], l0u[[i]])
-        rhs <- rhs + w[l] * crossprod(xi, Fu[[i]] %*% b[[i]][b.inds[[k]]]) + 
-                      gamma[k] * w[l] * v[l] * crossprod(xi * tau.surv[[i]], xi)
-      }
-      out[1, k] <- cenK - rhs
-    }
-    sgamma[[i]] <- out
-  }
-
-  # S(eta) ----
-  KK <- mapply(function(K, Fu){
-    KK <- apply(K, 2, rep, nrow(Fu))
-    if("numeric" %in% class(KK)) KK <- t(as.matrix(KK))
-    KK
-  }, K = K, Fu = Fu, SIMPLIFY = F)
-  
-  seta <- list()#matrix(NA, nr = n, nc = 2)
-  for(i in 1:n){
-    rhs <- 0
-    for(l in 1:3) rhs <- rhs + w[l] * l0u[[i]] * exp(KK[[i]] %*% eta + Fu[[i]] %*% sumgammabk[[i]] + tau.surv[[i]] * v[l])
-    seta[[i]] <- Deltai[i] %*% K[[i]] - t(crossprod(KK[[i]], rhs))
-  }
+  Sge <- mapply(function(bmat, S, K, KK, Fu, Fi, l0u, Delta){
+    Sgammaeta(c(gamma, eta), bmat, S, K, KK, Fu, Fi, l0u, Delta, w, v, 1e-4)
+  }, bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi, 
+  l0u = l0u, Delta = Deltai, SIMPLIFY = F)
   
   # Forming information -----------------------------------------------------
-  Si <- mapply(function(sD, Sb, Sv, Sg, Se){
-    c(sD, t(Sb), Sv, Sg, Se)
-  }, sD = sD, Sb = sbeta, Sv = svar.e, Sg = sgamma, Se = seta, SIMPLIFY = F)
+  si <- mapply(function(sD, Sb, Sv, Sge){
+    c(sD, t(Sb), Sv, Sge)
+  }, sD = sD, Sb = sbeta, Sv = svar.e, Sge = Sge)
   
-  lhs <- Reduce('+', lapply(Si, tcrossprod))
-  rhs <- tcrossprod(colSums(do.call(rbind, Si)))
-  I <- lhs - rhs/n    # NB This RHS should = 0, however due to approximate nature of the approach, we leave this term in 
-                      # and note a small attenuation towards the null in SE calculation in the case it is absent.
-  H <- solve(I)
-  
-  return(sqrt(diag(H)))
+  S <- rowSums(si)
+  I <- Reduce('+', lapply(1:n, function(i) tcrossprod(si[, i]))) - S/n  # NB This RHS should = 0, however due to approximate nature of the approach, we leave this term in 
+                                                                        # and note a small attenuation towards the null in SE calculation in the case it is absent.
+  return(sqrt(diag(solve(I))))
 }

@@ -42,8 +42,8 @@ D[1, 5] <- D[5, 1] <- 0.5^3
 D[3, 5] <- D[5, 3] <- -0.5*(0.5^2)
 
 var.e <- c(0.25, 0.25, 0.25)
-eta <- c(0, 1)
-gamma <- c(-0.5, 1, 0.5)
+eta <- c(-0.1, 0.3)
+gamma <- c(-0.5, 0.75, 0.5)
 
 # Simulate some data and transform it using the above castData function.
 sim <- joineRML::simData(n = 250, ntms = 10, beta = beta, gamma.x = eta, gamma.y = gamma, sigma2 = var.e,

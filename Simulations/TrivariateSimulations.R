@@ -1,8 +1,10 @@
 #' ####
 #' TrivariateSimulations.R
-#' Simulating trivariate data used in simulation I
+#' Simulating trivariate data used in Simulation I
 #' ----
-#' Shown is the 'medium' profile.
+#' Script loops through the profiles used in Section 3.1 in the paper, 
+#' although this can be escapes and specific ones chosen via
+#' joineRML::simData(.) or below simn with bespoke choices.
 #' ####
 
 beta <- rbind(c(0, 1, 1, 1),
@@ -16,69 +18,62 @@ D[1, 5] <- D[5, 1] <- 0.5^3
 D[3, 5] <- D[5, 3] <- -0.5*(0.5^2)
 
 sigma2 <- c(0.25, 0.25, 0.25)
-gamma.x <- c(0, 1)
-gamma.y <- c(-0.5, 1, 0.5)
+gamma.x <- c(-0.1, 0.3)
+gamma.y <- c(-0.5, 0.75, 0.5)
 
-simn <- function(n){
-      x <- replicate(100,
-          joineRML::simData(n = n, ntms = 10, beta = beta, gamma.x = gamma.x,  # Medium profile
-                            gamma.y = gamma.y, sigma2 = sigma2, D = D, theta0 = -4, theta1 = 0.15),
-          simplify = F)
-      print(mean(do.call(c, lapply(x, function(xx) sum(xx$survdat$cens)/n))))
-      x
-}
-
-source("./Simulations/simFns.R")
-
-for(i in c(250, 500, 1000)){
-  d <- simn(i)
-  dat <- lapply(d, castData3)
-  for(j in 1:100) dat[[j]]$aa <- j
-  save(dat, file = paste0(getwd(), "/Simulations/Trivariate", i, ".RData"))
-}
-
-
-# Fit using approximate EM algorithm --------------------------------------
-
-# Load e.g. dat250 and fit EM
-load("./Simulations/Trivariate250.RData")
-onefit <- em(dat[[1]]$dat, dat[[1]]$ph)
-
-# Or define a function and lapply
-emfit <- function(x, ...){
-  print(x$aa)
-  res <- tryCatch(em(x$dat, x$ph, ...), error = function(e) NULL)
-  res
-}
-
-fits <- lapply(dat, emfit)
-
-
-# Generate the nine (n = {250, 500, 1000} * profile length ={short, medium long}) sets used in paper --------
 simn <- function(n, ntms, theta){
   x <- replicate(100,
-                 joineRML::simData(n = n, ntms = ntms, beta = beta, gamma.x = gamma.x,
-                                   gamma.y = gamma.y, sigma2 = sigma2, D = D, theta0=theta[1], theta1=theta[2]),
+                 joineRML::simData(n = n, ntms = ntms, beta = beta, gamma.x = gamma.x, # Medium profile
+                                   gamma.y = gamma.y, sigma2 = sigma2, D = D, theta0=theta[1], theta1=theta[2]), #theta0 = -4, theta1 = 0.15),
                  simplify = F)
   print(mean(do.call(c, lapply(x, function(xx) sum(xx$survdat$cens)/n))))
   x
 }
 
 source("./Simulations/simFns.R")
-save.loc <- paste0(getwd(), "/Simulations/") # Or create and define sensible sub-directory...
+save.loc <- paste0("./Simulations") # By default will simply 'dump' into the Simulations folder.
 
 for(i in c(250, 500, 1e3)){
   for(j in c("Short", "Medium", "Long")){
-    if(j == "Short"){ntms <- 6; theta <- c(-2.75, 0.15)}
-    if(j == "Medium"){ntms <- 10; theta <- c(-4, 0.15)}
-    if(j == "Long"){ntms <- 15; theta <- c(-5.5, 0.15)}
+    if(j == "Short"){ntms <- 6; theta <- c(-2.5, 0.15)}
+    if(j == "Medium"){ntms <- 10; theta <- c(-3.5, 0.15)}
+    if(j == "Long"){ntms <- 15; theta <- c(-5, 0.15)}
     d <- simn(i, ntms, theta)
-    dat <- lapply(d, castData3)
-    for(k in 1:100) dat[[k]]$aa <- k
+    dat <- lapply(d, castData, 3)
     file.name <- paste0(save.loc, "Trivariate-n", i, "-", j, ".RData")
     save(dat, file = file.name)
     message(file.name)
   }
 }
 
+# Fit using approximate EM algorithm --------------------------------------
+# Load e.g. dat250 and fit EM
+load("./Simulations/Trivariate-n250-Medium.RData")
+onefit <- em(dat[[1]]$dat, dat[[1]]$ph)
+
+# Or define a function and lapply
+emfit <- function(x, ...){
+  # print(x$aa)
+  res <- tryCatch(em(x$dat, x$ph, ...), error = function(e) NULL)
+  res
+}
+
+data.dir <- './Simulations/'    # Change to match above.
+data.files <- as.list(dir(data.dir, pattern = '^Tr'))
+
+fitter <- function(x){
+  load(paste0(data.dir, x))
+  message(paste0(data.dir, x))
+  pb <- utils::txtProgressBar(max = 100, style = 3)
+  fits <- list()
+  for(i in 1:100){
+    fits[[i]] <- suppressMessages(emfit(dat[[i]]))
+    utils::setTxtProgressBar(pb, i)
+  }
+  save(fits, file = paste0(data.dir, 'fits-', x)) # Saves back into whatever folder chosen above.
+  message(paste0(data.dir, 'fits-', x,'\n'))
+  fits      
+}
+
+all.fits <- lapply(data.files, fitter)
 

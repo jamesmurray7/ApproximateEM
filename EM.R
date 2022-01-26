@@ -54,13 +54,13 @@ em <- function(data, ph,
   sv <- surv.mod(ph, data, inits.surv$l0.init)
   ft <- sv$ft; nev <- sv$nev
   surv.ids <- sv$surv.ids; surv.times <- sv$surv.times
-  Di <- sv$Di
-  l0 <- sv$l0; l0i <- sv$l0i; l0u <- sv$l0u
+  Di <- sv$Di; Deltai.list <- as.list(Di)
+  l0 <- sv$l0; l0i <- sv$l0i; l0i.list <- as.list(l0i); l0u <- sv$l0u
   Fi <- sv$Fi; Fu <- sv$Fu
   # List-versions of several data objects for use of mapply()
   Fi.list <- lapply(1:nrow(Fi), function(i) Fi[i, ])
   rvFi.list <- lapply(1:nrow(Fi), function(i) do.call(c, replicate(nK, Fi[i,], simplify = F)))
-  Krep <- sapply(1:n, function(x){  # For updates to \eta
+  KK <- sapply(1:n, function(x){  # For updates to \eta
     x <- apply(K[[x]], 2, rep, nrow(Fu[[x]]))
     if("numeric" %in% class(x)) x <- t(as.matrix(x))
     x
@@ -75,24 +75,17 @@ em <- function(data, ph,
   mvlme.time <- mvlme.fit$elapsed.time
   gamma <- inits.surv$inits[3:length(inits.surv$inits)]; gr <- rep(gamma, each = 2)  # 2 for intercept and slope + proportional assoc
   eta <- inits.surv$inits[1:2]
-  l0.init <- inits.surv$l0.init
-  
-  # Extract all survival-related objects
-  sv <- surv.mod(ph, data, l0.init)
-  ft <- sv$ft; nev <- sv$nev
-  surv.ids <- sv$surv.ids; surv.times <- sv$surv.times
-  Di <- sv$Di
-  l0 <- sv$l0; l0i <- sv$l0i; l0u <- sv$l0u
-  Fi <- sv$Fi; Fu <- sv$Fu
-  K <- getKi(data, ph)
   
   # Cast to parameter vector
-  params <- c(vech(D), beta, var.e, gamma, eta)
-  names(params) <- c(rep("D", length(vech(D))), 
+  vD <- vech(D)
+  names(vD) <- paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste0, collapse = ','),']')
+  params <- c(vD, beta, var.e, gamma, eta)
+  names(params) <- c(names(vD), 
                      names(beta), names(inits.long$var.e.init), names(gamma), paste0('eta_', names(eta)))
   
-  # Collect history
-  dmats <- list(Y=Y, X=X, Z=Z, mi=mi, Yk=Yk, Xk=Xk, Zk=Zk, K = K, sv=sv)
+  # Collect data objects and iteration "0" history
+  dmats <- list(Y = Y, X = X, Z = Z, mi = mi, Yk = Yk, Xk = Xk, Zk = Zk,        # Longit.
+                K = K, KK = KK, Fu = Fu, Fi = Fi.list, Deltai = Deltai.list)    # Survival
   if(collect.hist) iter.hist = data.frame(iter = iter, t(params))
   
   # Gaussian Quadrature -----------------------------------------------------
@@ -119,9 +112,10 @@ em <- function(data, ph,
                      Y, X, Z, V, D, sum(mi), K, Delta, l0i, Fi, l0u, Fu,
                      gamma, beta, eta, gr, rvFi, nK, q,
                      control = list(xtol = 1e-3, grtol = 1e-6))$par
-    },b = b, Y = Y, X = X, Z = Z, V = V, mi = mi, K = K, Delta = as.list(Di), l0i = as.list(l0i),
+    },b = b, Y = Y, X = X, Z = Z, V = V, mi = mi, K = K, Delta = Deltai.list, l0i = l0i.list,
       Fi = Fi.list, l0u = l0u, Fu = Fu, rvFi = rvFi.list, SIMPLIFY = F)
     b.hat.split <- lapply(b.hat, function(y) lapply(b.inds, function(x) y[x]))
+    bmat <- lapply(b.hat, matrix, nc = 2, byr = T)
     
     Sigmai <- mapply(function(b, Z, V, K, l0u, Fu){
       solve(-1 * sdll(b, Z, D, V, K, l0u, Fu, eta, gr, nK))
@@ -174,66 +168,17 @@ em <- function(data, ph,
     #' #####
     #' Survival Parameters
     #' #####
-    #' Define \mu for survival submodel
-    mu.surv <- mapply(function(K, Fu, b){
-      rhs <- 0
-      for(k in 1:nK) rhs <- rhs + gamma[k] * b[b.inds[[k]]]
-      exp(K %*% eta + Fu %*% rhs)
-    }, K = Krep, Fu = Fu, b = b.hat, SIMPLIFY = F)
-    
-    #' Define \tau for survival submodel
-    tau <- mapply(function(Fu, S){
-      out <- numeric(nrow(Fu))
-      for(k in 1:nK) out <- out + diag(gamma[k]^2 * tcrossprod(Fu %*% S[[k]], Fu))
-      out
-    }, Fu = Fu, S = S, SIMPLIFY = F)
-    
-    tau.tilde <- mapply(function(Fu, S){
-      mat <- matrix(0, nr = nK, nc = nrow(Fu))
-      for(k in 1:nK) mat[k, ] <- diag(tcrossprod(Fu %*% S[[k]], Fu))
-      mat
-    }, Fu = Fu, S = S, SIMPLIFY = F)
-    
-    tau.surv <- lapply(tau, sqrt)
-    tau2.surv <- lapply(tau, function(x){
-      x <- x^(-0.5)
-      if(any(is.infinite(x))) x[which(is.infinite(x))] <- 0   # Avoid NaN
-      x
-    })
     
     #' Set out Newton-Raphson items for update to (\gamma, \eta)
-    #' S(\gamma) ----
-    Sgamma <- mapply(function(Delta, tau.surv, mu.surv, l0u, Fu, Fi, b){
-      t(Sgammacalc(gamma, Delta, tau.surv, mu.surv, l0u, Fu, Fi, w, v, b, nK, gh.nodes))
-    }, Delta = as.list(Di), tau.surv = tau.surv, mu.surv = mu.surv, l0u = l0u,
-    Fu = Fu, Fi = Fi.list, b = b.hat.split, SIMPLIFY = F)
+    Sge <- mapply(function(bmat, S, K, KK, Fu, Fi, l0u, Delta){
+      Sgammaeta(c(gamma, eta), bmat, S, K, KK, Fu, Fi, l0u, Delta, w, v, 1e-4)
+    }, bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi.list, 
+    l0u = l0u, Delta = Deltai.list, SIMPLIFY = F)
     
-    #' I(\gamma)
-    Igamma <- mapply(function(tau.tilde, tau.surv, tau2.surv, mu.surv, Fu, l0u, b){
-      gamma2Calc(gamma, tau.tilde, tau.surv, tau2.surv, mu.surv, w, v, Fu, l0u, b, nK, gh.nodes)
-    }, tau.tilde = tau.tilde, tau.surv = tau.surv, tau2.surv = tau2.surv,
-    mu.surv = mu.surv, Fu = Fu, l0u = l0u, b = b.hat.split, SIMPLIFY = F)
-    
-    #' S(\eta) ----
-    Seta <- mapply(function(K, KK, Delta, l0u, mu.surv, tau.surv){
-      cen <- Delta %*% K
-      rhs <- c(0, 0)
-      for(l in 1:gh.nodes) rhs <- rhs + w[l] * t(KK) %*% (l0u * (mu.surv * exp(tau.surv * v[l])))
-      cen-t(rhs)
-    }, K = K, KK = Krep, Delta = as.list(Di), l0u = l0u, mu.surv = mu.surv, tau.surv = tau.surv, SIMPLIFY = F)
-    
-    #' I(\eta) ----
-    Ieta <- mapply(function(K, KK, tau.surv, mu.surv, l0u){
-      Ietacalc(2, K, KK, tau.surv, mu.surv, l0u, w, v, gh.nodes)
-    }, K = K, KK = Krep, tau.surv = tau.surv, mu.surv = mu.surv, l0u = l0u, SIMPLIFY = F)
-    
-    #' Second derivates of \gamma and \eta ('cross-terms') -----
-    Igammaeta <- list() # for some reason I can't get mapply() to work with this 
-    # Old
-    for(i in 1:n){
-      Igammaeta[[i]] <- Igammaetacalc(2, Krep[[i]], tau.surv[[i]], #tau.tilde[[i]],
-                                      mu.surv[[i]], l0u[[i]], Fu[[i]], b.hat.split[[i]], gamma, w, v, nK, gh.nodes)
-    }
+    Hge <- mapply(function(bmat, S, K, KK, Fu, Fi, l0u, Delta){
+      Hgammaeta(c(gamma, eta), bmat, S, K, KK, Fu, Fi, l0u, Delta, w, v, 1e-4)
+    }, bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi.list, 
+    l0u = l0u, Delta = Deltai.list, SIMPLIFY = F)
     
     #' ##################
     #' M-step ========= #
@@ -243,12 +188,12 @@ em <- function(data, ph,
     D.new <- Reduce('+', D.newi)/n
     
     #' \beta ----
-    beta.new <- solve(Reduce('+', XtX)) %*% Reduce('+', beta.rhs) # NB this slightly faster than Reduce('+',.) on rhs
+    beta.new <- solve(Reduce('+', XtX)) %*% Reduce('+', beta.rhs) # NB this slightly faster than Reduce('+',.) on rhs.
     #' var.e ----
-    var.e.new <- colSums(do.call(rbind, Ee))/colSums(do.call(rbind, mi))      # NB this same speed as storing Ee directly as an array
+    var.e.new <- colSums(do.call(rbind, Ee))/colSums(do.call(rbind, mi))      # NB this same speed as storing Ee directly as an array.
     #' The baseline hazard, \lambda ----
     lambda <- lambdaUpdate(surv.times, ft, gamma, eta, K, S,
-                           b.hat.split, n, w, v, gh.nodes, nK)                # (NB this not monitored for convergence)
+                           b.hat.split, n, w, v, gh.nodes, nK)                # NB this not monitored for convergence.
     l0.new <- nev/rowSums(lambda)
     l0u.new <- lapply(l0u, function(x){
       ll <- length(x); l0.new[1:ll]
@@ -258,17 +203,7 @@ em <- function(data, ph,
     l0i.new[which(Di == 1)] <- l0.new[match(Fi[which(Di==1), 2], ft)]
     
     #' (\gamma, \eta) ----
-    # Set up score vector and information matrix
-    Sge <- c(colSums(do.call(rbind, Sgamma)), colSums(do.call(rbind, Seta)))
-    Imat <- as.matrix(Matrix::bdiag(Reduce('+', Igamma),
-                                    Reduce('+', Ieta)))
-    # Fill in off-block diagonal with Igammaeta
-    eta.inds <- (nK+1):ncol(Imat)
-    for(k in 1:nK){
-      Imat[k, eta.inds] <- Imat[eta.inds, k] <- rowSums(do.call(cbind, lapply(Igammaeta, '[[', k)))
-    }
-    
-    gamma.eta.new <- c(gamma, eta) + solve(Imat, Sge)
+    gamma.eta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(do.call(cbind, Sge)))
     
     gamma.new <- gamma.eta.new[1:nK]
     eta.new <- gamma.eta.new[(nK + 1):length(gamma.eta.new)]
@@ -303,7 +238,7 @@ em <- function(data, ph,
     eta <- eta.new
     beta <- beta.new; 
     b <- b.hat
-    l0 <- l0.new; l0u <- l0u.new; l0i <- l0i.new
+    l0 <- l0.new; l0u <- l0u.new; l0i <- l0i.new; l0i.list <- as.list(l0i)
     iter <- iter + 1
     if(collect.hist) iter.hist = rbind(iter.hist, c(iter = iter, t(params)))
   }
@@ -319,21 +254,25 @@ em <- function(data, ph,
   if(post.process){
     message("\nStarting post-fit calculations...")
     pp.start <- proc.time()[3]
+    
     # b at final parameter values.
     b <- mapply(function(b, Y, X, Z, V, mi, K, Delta, l0i, Fi, l0u, Fu, rvFi){
-      ucminf::ucminf(b, ll, gradll, 
+      ucminf::ucminf(b, ll, gradll,
                      Y, X, Z, V, D, sum(mi), K, Delta, l0i, Fi, l0u, Fu,
                      gamma, beta, eta, gr, rvFi, nK, q,
                      control = list(xtol = 1e-3, grtol = 1e-6))$par
-    },b = b, Y = Y, X = X, Z = Z, V = V, mi = mi, K = K, Delta = as.list(Di), l0i = as.list(l0i),
+    },b = b, Y = Y, X = X, Z = Z, V = V, mi = mi, K = K, Delta = Deltai.list, l0i = l0i.list,
     Fi = Fi.list, l0u = l0u, Fu = Fu, rvFi = rvFi.list, SIMPLIFY = F)
+    bmat <- lapply(b, matrix, nc = 2, byr = T)
     
     # Covariance matrix for each subject at the MLEs for Omega and posterior mode bi.
     Sigmai <- mapply(function(b, Z, V, K, l0u, Fu){
       solve(-1 * sdll(b, Z, D, V, K, l0u, Fu, eta, gr, nK))
     }, b = b.hat, Z = Z, V = V, K = K, l0u = l0u, Fu = Fu, SIMPLIFY = F)
+    S <- lapply(Sigmai, function(y) lapply(b.inds, function(x) y[x,x]))
     
-    SEs <- hessian(coeffs, dmats, V, b, Sigmai, l0i, l0u, gh.nodes, n, q, nK)
+    
+    SEs <- hessian(coeffs, dmats, V, b, bmat, Sigmai, S, l0u, gh.nodes, n, q, nK)
     names(SEs) <- names(params)
     pp.end <- proc.time()[3]
     message("\nDone")
