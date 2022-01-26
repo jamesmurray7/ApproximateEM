@@ -268,7 +268,7 @@ em <- function(data, ph,
     # Covariance matrix for each subject at the MLEs for Omega and posterior mode bi.
     Sigmai <- mapply(function(b, Z, V, K, l0u, Fu){
       solve(-1 * sdll(b, Z, D, V, K, l0u, Fu, eta, gr, nK))
-    }, b = b.hat, Z = Z, V = V, K = K, l0u = l0u, Fu = Fu, SIMPLIFY = F)
+    }, b = b, Z = Z, V = V, K = K, l0u = l0u, Fu = Fu, SIMPLIFY = F)
     S <- lapply(Sigmai, function(y) lapply(b.inds, function(x) y[x,x]))
     
     
