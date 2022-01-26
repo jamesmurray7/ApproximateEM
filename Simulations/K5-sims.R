@@ -75,4 +75,4 @@ propfail <- function(x) sum(x$survdat$cens)/500 * 100
 mean(do.call(c, lapply(x, propfail)))  # approximately 50 %.
 
 source("./Simulations/simFns.R")
-dat <- lapply(x, castData5)
+dat <- lapply(x, castData, 5)

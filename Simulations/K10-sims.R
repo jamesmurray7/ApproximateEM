@@ -121,7 +121,7 @@ gamma <- c(0.6, 0.5, -0.2, -0.25, -0.2, -0.2, -0.15, 0.25, -0.1, 0.25)
 # Simulate data -----------------------------------------------------------
 N <- 100
 x <- replicate(N, 
-               joineRML::simData(n = 150, ntms = 15,
+               joineRML::simData(n = 500, ntms = 15,    
                                  beta = rbind(beta1, beta2, beta3, beta4, beta5,
                                               beta6, beta7, beta8, beta9, beta10),
                                  sigma2 = c(var1, var2, var3, var4, var5,
@@ -140,4 +140,4 @@ propfail <- function(x) sum(x$survdat$cens)/500 * 100
 do.call(c, lapply(x, propfail)) %>% mean # Approximately 50%.
 
 source("Simulations/simFns.R")
-dat <- lapply(x, castData10)
+dat <- lapply(x, castData, 10)
