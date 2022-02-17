@@ -109,7 +109,7 @@ hessian <- function(Omega, data.mat, V, b, bmat, Sigmai, S, l0u, gh.nodes, n, q,
   }, sD = sD, Sb = sbeta, Sv = svar.e, Sge = Sge)
   
   S <- rowSums(si)
-  I <- Reduce('+', lapply(1:n, function(i) tcrossprod(si[, i]))) - S/n  # NB This RHS should = 0, however due to approximate nature of the approach, we leave this term in 
-                                                                        # and note a small attenuation towards the null in SE calculation in the case it is absent.
+  I <- Reduce('+', lapply(1:n, function(i) tcrossprod(si[, i]))) - tcrossprod(S)/n  
+  # NB RHS should = 0, however due to approximate nature of the approach (i.e. Omega aren't MLEs), we leave this term in.
   return(sqrt(diag(solve(I))))
 }
