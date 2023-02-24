@@ -1,5 +1,6 @@
 # ApproximateEM
-This repository contins all necessary R scripts to implement the Approximate EM algorithm on joint models of survival and multivariate joint data.
+This repository contins all necessary R scripts to implement the Approximate EM algorithm on joint models of survival and multivariate joint data as they appear in [Murray & Philipson (2022)](https://doi.org/10.1016/j.csda.2022.107438). 
+Note that the work presented here has been succeeded by an R package on a broader class of generalised linear mixed models with more flexible random effects structure, [gmvjoint](https://github.com/jamesmurray7/gmvjoint).
 
 This README briefly sets out file structure. The working directory needs to be set to `~/.../ApproximateEM` in order for the structure set out here to work without a hitch.
 
